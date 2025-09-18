@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Modelos de Crescimento</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 5px 5px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 10px 16px;
+            transition: 0.3s;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ddd;
+            font-weight: bold;
+        }
+        .tabcontent {
+            display: none;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+            animation: fadeEffect 1s;
+        }
+        @keyframes fadeEffect {
+            from {opacity: 0;}
+            to {opacity: 1;}
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .btn-export {
+            background-color: #2196F3;
+        }
+        .btn-export:hover {
+            background-color: #0b7dda;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .impulse-controls {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .impulse-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .impulse-control {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .prior-chart {
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        .extinction-scatter-container {
+            height: 400px;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simulador de Análise Preditiva A Priori</h1>
+        
+        <div class="tab">
+            <button class="tablinks active" onclick="openTab(event, 'Simulation')">Simulação</button>
+            <button class="tablinks" onclick="openTab(event, 'Prior')">Distribuições a Priori</button>
+        </div>
+        
+        <div id="Simulation" class="tabcontent" style="display:block;">
+            <div class="control-group">
+                <label for="modelSelect">Selecione o Modelo:</label>
+                <select id="modelSelect">
+                    <option value="1">Modelo 1: dP/dt = rP(1-P/k) - ΣφᵢN(tᵢ,sᵢ²)</option>
+                    <option value="2">Modelo 2: dP/dt = rP(1-P/k) - Σφᵢ (P/k) N(tᵢ,sᵢ²)</option>
+                    <option value="3">Modelo 3: dPₜ = [rPₜ(1-Pₜ/k) - ΣφᵢN(tᵢ,sᵢ²)]dt + σdWₜ</option>
+                    <option value="4">Modelo 4: dPₜ = [rPₜ(1-Pₜ/k) - Σφᵢ (Pₜ/k) N(tᵢ,sᵢ²)]dt + σdWₜ</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="numImpulses">Número de Impulsos:</label>
+                <input type="number" id="numImpulses" min="0" value="1" onchange="updateImpulseControls()">
+            </div>
+            
+            <div id="impulseControls"></div>
+            
+            <div class="control-group">
+                <label for="sigmaProcess">σ do Processo Estocástico (para modelos 3 e 4):</label>
+                <input type="number" id="sigmaProcess" min="0" step="0.01" value="3.0">
+            </div>
+            
+            <button onclick="runSimulation()">Executar Simulação</button>
+            <button class="btn-export" onclick="exportData()">Exportar Resultados</button>
+            
+            <div class="chart-container">
+                <canvas id="simulationChart"></canvas>
+            </div>
+        </div>
+        
+        <div id="Prior" class="tabcontent">
+            <h2>Distribuições a Priori</h2>
+            
+            <div class="control-group">
+                <label for="priorSamples">Número de Amostras para Visualização:</label>
+                <input type="number" id="priorSamples" min="100" max="10000" value="2000">
+            </div>
+            
+            <button onclick="plotPriorDistributions()">Visualizar Distribuições</button>
+            
+            <div class="prior-chart">
+                <canvas id="priorChartK"></canvas>
+            </div>
+            
+            <div class="prior-chart">
+                <canvas id="priorChartR"></canvas>
+            </div>
+            
+            <!-- Adicionando o gráfico de dispersão para extinção -->
+            <h2>Probabilidade de Extinção por Valores de k e r</h2>
+            <div class="extinction-scatter-container">
+                <canvas id="extinctionScatterChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Variáveis globais
+        let simulationChart = null;
+        let priorChartK = null;
+        let priorChartR = null;
+        let extinctionScatterChart = null;
+        let simulationResults = null;
+        let extinctionData = [];
+        
+        // Parâmetros das distribuições a priori
+        const kPrior = {
+            mean: 500,
+            cv: 0.2, // Coeficiente de variação (assumido)
+            get mu() {
+                const variance = Math.log(1 + Math.pow(this.cv, 2));
+                return Math.log(this.mean) - variance / 2;
+            },
+            get sigma() {
+                return Math.sqrt(Math.log(1 + Math.pow(this.cv, 2)));
+            }
+        };
+        
+        const rPrior = {
+            mean: 2.15,
+            cv: 0.1, // Coeficiente de variação (assumido)
+            get mu() {
+                const variance = Math.log(1 + Math.pow(this.cv, 2));
+                return Math.log(this.mean) - variance / 2;
+            },
+            get sigma() {
+                return Math.sqrt(Math.log(1 + Math.pow(this.cv, 2)));
+            }
+        };
+        
+        // Funções de utilidade
+        function openTab(evt, tabName) {
+            const tabcontent = document.getElementsByClassName("tabcontent");
+            for (let i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            
+            const tablinks = document.getElementsByClassName("tablinks");
+            for (let i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        function updateImpulseControls() {
+            const numImpulses = parseInt(document.getElementById("numImpulses").value);
+            const container = document.getElementById("impulseControls");
+            container.innerHTML = "";
+            
+            for (let i = 0; i < numImpulses; i++) {
+                const impulseDiv = document.createElement("div");
+                impulseDiv.className = "impulse-controls";
+                
+                const header = document.createElement("div");
+                header.className = "impulse-header";
+                header.innerHTML = `<h3>Impulso ${i+1}</h3>`;
+                impulseDiv.appendChild(header);
+                
+                const controls = document.createElement("div");
+                controls.className = "impulse-control";
+                
+                // Intensidade (phi)
+                const phiControl = document.createElement("div");
+                phiControl.innerHTML = `
+                    <label for="phi${i}">Intensidade (φ):</label>
+                    <input type="number" id="phi${i}" step="1" value="800" min="0">
+                `;
+                controls.appendChild(phiControl);
+                
+                // Momento de ocorrência (t)
+                const tControl = document.createElement("div");
+                tControl.innerHTML = `
+                    <label for="t${i}">Momento (t, anos):</label>
+                    <input type="number" id="t${i}" step="0.1" value="${5 + i*5}" min="0" max="40">
+                `;
+                controls.appendChild(tControl);
+                
+                // Duração (sigma)
+                const sControl = document.createElement("div");
+                sControl.innerHTML = `
+                    <label for="s${i}">Duração (s, anos):</label>
+                    <input type="number" id="s${i}" step="0.01" value="0.25" min="0.01">
+                `;
+                controls.appendChild(sControl);
+                
+                impulseDiv.appendChild(controls);
+                container.appendChild(impulseDiv);
+            }
+        }
+        
+        // Função de densidade normal
+        function normalPDF(x, mean, std) {
+            return (1 / (std * Math.sqrt(2 * Math.PI))) * 
+                   Math.exp(-0.5 * Math.pow((x - mean) / std, 2));
+        }
+        
+        // Gerador de números aleatórios com distribuição normal usando Box-Muller
+        function randn() {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+        
+        // Amostrar de uma distribuição log-normal
+        function sampleLogNormal(mu, sigma) {
+            const normalSample = randn() * sigma + mu;
+            return Math.exp(normalSample);
+        }
+        
+        // Implementação dos modelos
+        function simulateModel(modelNum, r, k, impulses, sigmaProcess, numSimulations = 1000) {
+            const years = 40;
+            const daysPerYear = 365;
+            const totalDays = years * daysPerYear;
+            const dt = 1 / daysPerYear; // passo de tempo em anos
+            
+            // Inicializar matriz de resultados
+            const results = Array(numSimulations).fill().map(() => 
+                Array(totalDays + 1).fill(0)
+            );
+            
+            // Parâmetro inicial
+            const P0 = 10; // População inicial
+            
+            for (let sim = 0; sim < numSimulations; sim++) {
+                results[sim][0] = P0;
+                
+                // Para modelos estocásticos, precisamos de um processo Wieneriano
+                let W = 0;
+                
+                for (let day = 1; day <= totalDays; day++) {
+                    const t = day * dt;
+                    const P = results[sim][day - 1];
+                    
+                    // Garantir que a população zerada não cresça mais
+                    if (day>1 && results[sim][day -1] === 0){ results[sim][day] = 0
+                    } else{
+
+                    // Calcular a contribuição dos impulsos
+                    let impulseEffect = 0;
+                    for (const impulse of impulses) {
+                        const { phi, t_i, s_i } = impulse;
+                        const normalValue = normalPDF(t, t_i, s_i);
+                        
+                        if (modelNum === 1 || modelNum === 3) {
+                            impulseEffect += phi * normalValue;
+                        } else {
+                            impulseEffect += phi * (P/k) * normalValue;
+                        }
+                    }
+                    
+                    // Calcular a mudança na população
+                    let dP;
+                    if (modelNum === 1 || modelNum === 2) {
+                        // Modelos determinísticos
+                        dP = (r * P * (1 - P / k) - impulseEffect) * dt;
+                    } else {
+                        // Modelos estocásticos
+                        const dW = randn() * Math.sqrt(dt);
+                        dP = (r * P * (1 - P / k) - impulseEffect) * dt + sigmaProcess * dW;
+                        W += dW;
+                    }
+                    
+                    results[sim][day] = P + dP;
+                    
+                    // Garantir que a população não seja negativa
+                    if (results[sim][day] < 0) results[sim][day] = 0;
+                } // fim else processamento
+                } // fim for
+            }
+            
+            return results;
+        }
+        
+        // Executar simulação
+        function runSimulation() {
+            const modelNum = parseInt(document.getElementById("modelSelect").value);
+            const numImpulses = parseInt(document.getElementById("numImpulses").value);
+            const sigmaProcess = parseFloat(document.getElementById("sigmaProcess").value);
+            
+            // Coletar parâmetros dos impulsos
+            const impulses = [];
+            for (let i = 0; i < numImpulses; i++) {
+                const phi = parseFloat(document.getElementById(`phi${i}`).value);
+                const t_i = parseFloat(document.getElementById(`t${i}`).value);
+                const s_i = parseFloat(document.getElementById(`s${i}`).value);
+                
+                impulses.push({ phi, t_i, s_i });
+            }
+            
+            // Gerar amostras das distribuições a priori
+            const numSimulations = 1000;
+            const rSamples = Array(numSimulations).fill().map(() => sampleLogNormal(rPrior.mu, rPrior.sigma));
+            const kSamples = Array(numSimulations).fill().map(() => sampleLogNormal(kPrior.mu, kPrior.sigma));
+            
+            // Executar simulações
+            const allResults = [];
+            extinctionData = []; // Limpar dados de extinção anteriores
+            
+            for (let i = 0; i < numSimulations; i++) {
+                const r = rSamples[i];
+                const k = kSamples[i];
+                
+                const simulation = simulateModel(modelNum, r, k, impulses, sigmaProcess, 1)[0];
+                allResults.push(simulation);
+                
+                // Verificar se houve extinção (população final <= 0)
+                const extinct = simulation[simulation.length - 1] <= 0;
+                extinctionData.push({
+                    k: k,
+                    r: r,
+                    extinct: extinct
+                });
+            }
+            
+            // Calcular estatísticas
+            const years = 40;
+            const daysPerYear = 365;
+            const totalDays = years * daysPerYear;
+            
+            const meanResults = [];
+            const upperResults = [];
+            const lowerResults = [];
+            
+            for (let day = 0; day <= totalDays; day++) {
+                const values = allResults.map(sim => sim[day]);
+                values.sort((a, b) => a - b);
+                
+                const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+                const lower = values[Math.floor(0.025 * values.length)];
+                const upper = values[Math.floor(0.975 * values.length)];
+                
+                meanResults.push(mean);
+                lowerResults.push(lower);
+                upperResults.push(upper);
+            }
+            
+            // Armazenar resultados para possível exportação
+            simulationResults = {
+                time: Array.from({length: totalDays + 1}, (_, i) => i / daysPerYear),
+                mean: meanResults,
+                lower: lowerResults,
+                upper: upperResults,
+                all: allResults
+            };
+            
+            // Plotar resultados
+            plotSimulationResults();
+            plotExtinctionScatter();
+        }
+        
+        // Plotar resultados da simulação
+        function plotSimulationResults() {
+            const ctx = document.getElementById('simulationChart').getContext('2d');
+            
+            if (simulationChart) {
+                simulationChart.destroy();
+            }
+            
+            simulationChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: simulationResults.time,
+                    datasets: [
+                        {
+                            label: 'Média',
+                            data: simulationResults.mean,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: false,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Limite Inferior (2.5%)',
+                            data: simulationResults.lower,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            fill: '+1',
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Limite Superior (97.5%)',
+                            data: simulationResults.upper,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            fill: false,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Tempo (anos)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(0);
+                                }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'População'
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Simulação de Crescimento Populacional com Intervalo de Credibilidade de 95%'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Visualizar distribuições a priori
+        function plotPriorDistributions() {
+            const numSamples = parseInt(document.getElementById("priorSamples").value);
+            
+            // Gerar amostras
+            const kSamples = Array(numSamples).fill().map(() => sampleLogNormal(kPrior.mu, kPrior.sigma));
+            const rSamples = Array(numSamples).fill().map(() => sampleLogNormal(rPrior.mu, rPrior.sigma));
+            
+            // Calcular histogramas
+            const kMax = Math.max(...kSamples);
+            const kMin = Math.min(...kSamples);
+            const kStep = (kMax - kMin) / 20;
+            
+            const rMax = Math.max(...rSamples);
+            const rMin = Math.min(...rSamples);
+            const rStep = (rMax - rMin) / 20;
+            
+            const kBins = Array.from({length: 20}, (_, i) => kMin + i * kStep);
+            const rBins = Array.from({length: 20}, (_, i) => rMin + i * rStep);
+            
+            const kCounts = Array(20).fill(0);
+            const rCounts = Array(20).fill(0);
+            
+            for (const sample of kSamples) {
+                const binIndex = Math.min(19, Math.floor((sample - kMin) / kStep));
+                kCounts[binIndex]++;
+            }
+            
+            for (const sample of rSamples) {
+                const binIndex = Math.min(19, Math.floor((sample - rMin) / rStep));
+                rCounts[binIndex]++;
+            }
+            
+            // Normalizar para densidade
+            const kDensity = kCounts.map(count => count / (numSamples * kStep));
+            const rDensity = rCounts.map(count => count / (numSamples * rStep));
+            
+            // Plotar distribuição de k
+            const ctxK = document.getElementById('priorChartK').getContext('2d');
+            if (priorChartK) {
+                priorChartK.destroy();
+            }
+            
+            priorChartK = new Chart(ctxK, {
+                type: 'bar',
+                data: {
+                    labels: kBins.map(bin => bin.toFixed(0)),
+                    datasets: [{
+                        label: 'Densidade de Probabilidade',
+                        data: kDensity,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Densidade'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'k (capacidade de carga)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Distribuição a Priori para k (Log-Normal, Média = ${kPrior.mean})`
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+            
+            // Plotar distribuição de r
+            const ctxR = document.getElementById('priorChartR').getContext('2d');
+            if (priorChartR) {
+                priorChartR.destroy();
+            }
+            
+            priorChartR = new Chart(ctxR, {
+                type: 'bar',
+                data: {
+                    labels: rBins.map(bin => bin.toFixed(2)),
+                    datasets: [{
+                        label: 'Densidade de Probabilidade',
+                        data: rDensity,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Densidade'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'r (taxa de crescimento)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Distribuição a Priori para r (Log-Normal, Média = ${rPrior.mean})`
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Plotar gráfico de dispersão para extinção
+        function plotExtinctionScatter() {
+            if (extinctionData.length === 0) {
+                return; // Não há dados para plotar
+            }
+            
+            const ctx = document.getElementById('extinctionScatterChart').getContext('2d');
+            
+            if (extinctionScatterChart) {
+                extinctionScatterChart.destroy();
+            }
+            
+            // Separar dados por estado de extinção
+            const extinctPoints = extinctionData.filter(point => point.extinct);
+            const notExtinctPoints = extinctionData.filter(point => !point.extinct);
+            
+            extinctionScatterChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Extinto',
+                            data: extinctPoints.map(point => ({x: point.k, y: point.r})),
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            pointRadius: 4
+                        },
+                        {
+                            label: 'Não Extinto',
+                            data: notExtinctPoints.map(point => ({x: point.k, y: point.r})),
+                            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                            pointRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'k (Capacidade de Carga)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'r (Taxa de Crescimento)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Probabilidade de Extinção por Valores de k e r'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `k: ${context.raw.x.toFixed(2)}, r: ${context.raw.y.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Exportar dados
+        function exportData() {
+            if (!simulationResults) {
+                alert("Execute uma simulação primeiro!");
+                return;
+            }
+            
+            // Preparar dados para exportação
+            const exportData = [];
+            
+            for (let i = 0; i < simulationResults.time.length; i++) {
+                exportData.push({
+                    Tempo: simulationResults.time[i],
+                    Media: simulationResults.mean[i],
+                    Limite_Inferior: simulationResults.lower[i],
+                    Limite_Superior: simulationResults.upper[i]
+                });
+            }
+            
+            // Converter para CSV
+            const csv = Papa.unparse(exportData);
+            
+            // Criar link de download
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            const date = new Date().toISOString().slice(0, 10);
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", `simulacao_crescimento_${date}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Inicializar a página
+        window.onload = function() {
+            updateImpulseControls();
+            plotPriorDistributions();
+        };
+    </script>
+</body>
+</html>
